@@ -1,14 +1,7 @@
-﻿using Microsoft.Maui.Controls;
-using Microsoft.Maui.Controls.Shapes;
-using Microsoft.Maui.Graphics.Text;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 //using Android.Media;
-using System.IO;
-using System.Linq.Expressions;
 using System.Net.Sockets;
-using System.Reflection.Metadata;
 //using static Android.Print.PrintAttributes;
-using static System.Net.Mime.MediaTypeNames;
 //using Android.Graphics.Fonts;
 
 namespace Wand;
@@ -24,10 +17,13 @@ public partial class MainPage : ContentPage
 
     string incomingMsg = "";
 
-    string[] strArr;
+    string[] strArrServers;
+    string[] strArrPresets;
 
     string[] serverArr;
     string[] presetArr;
+
+    int page = 0;
 
     TcpClient client;
     NetworkStream stream;
@@ -60,12 +56,33 @@ public partial class MainPage : ContentPage
     public MainPage()
     {
         InitializeComponent();
+
         RenderMainPage();
     }
 
+    protected override bool OnBackButtonPressed()
+    {
+        Dispatcher.Dispatch(() =>//async?
+        {
+            if (page == 1)
+            {
+                RenderMainPage();
+                TcpReadWrite.WriteToStream(stream, "logout");
+            }
+            else if (page == 2)
+            {
+                RenderServerPage();
+            }
+
+        });
+
+        return true;
+    }
 
     void RenderMainPage()
     {
+        page = 0;
+
         verticalStackLayout.Children.Clear();
         hsl0.Children.Clear();
         hsl1.Children.Clear();
@@ -93,15 +110,15 @@ public partial class MainPage : ContentPage
         entryPassword.Placeholder = "Password";
 
 
-        //----------------remove----------------\\\
-        //entryAddress.Text = "192.168.1.12";     //|
-        //entryPort.Text = "10001";               //|
-        //entryUsername.Text = "admin";           //|
-        //entryPassword.Text = "1234";            //|
-        //--------------------------------------///
+        //---------Debug ready login text--------\\
+        //entryAddress.Text = "192.168.1.12";     \\
+        //entryPort.Text = "10001";                \\
+        //entryUsername.Text = "admin";            //
+        //entryPassword.Text = "1234";            //
+        //---------------------------------------//
 
 
-        //------------------------------------/DETAIL SAVING\-------------------------------------------------
+        //------------------------------------[DETAIL SAVING]-------------------------------------------------
         string[] splitStr = new string[6];
 
         if (!File.Exists(DetailFile.fullPath))
@@ -157,8 +174,9 @@ public partial class MainPage : ContentPage
         button.Clicked += Login;
 
 
+
         //---Append children to parents---
-        //verticalStackLayout.Children.Add(image);
+        verticalStackLayout.Children.Add(image);
         verticalStackLayout.Children.Add(label);
         verticalStackLayout.Children.Add(entryAddress);
         verticalStackLayout.Children.Add(entryPort);
@@ -179,34 +197,39 @@ public partial class MainPage : ContentPage
 
     }
 
-    void RenderServerPage()
+    async void RenderServerPage()
     {
         //1.Count servers
         //2.Create buttons
         //3.Onclick sends a preset_list request
 
-        TcpReadWrite.WriteToStream(stream, "server_list");
-        Thread.Sleep(400);
-        incomingMsg = TcpReadWrite.ReadFromStream(stream);
-        Debug.WriteLine(incomingMsg);
-        strArr = incomingMsg.Split('|');//splits server_list response
-        if (strArr[1].Contains("succes") | strArr[1].Contains("sucess") | strArr[1].Contains("success"))
-        {
-            stream.Flush();
+        page = 1;
 
-            serverArr = new string[strArr.Length - 2];
-
-            for (int i = 0; i < strArr.Length - 2; i++) //{server_list|success|server1|server2} -> {server1|server2}
-            {
-                serverArr[i] = strArr[i + 2];
-            }
-        }
+        await Task.Run(() => TcpReadWrite.WriteToStream(stream, "server_list"));
+        //Thread.Sleep(400);
 
         verticalStackLayout.Children.Clear();
 
+        incomingMsg = await Task.Run(() => TcpReadWrite.ReadFromStream(stream));
+
+        Debug.WriteLine(incomingMsg);
+        strArrServers = incomingMsg.Split('|');//splits server_list response
+        if (strArrServers.Contains("success"))
+        {
+            stream.Flush();
+
+            serverArr = new string[strArrServers.Length - 2];
+
+            for (int i = 0; i < strArrServers.Length - 2; i++) //{server_list|success|server1|server2} -> {server1|server2}
+            {
+                serverArr[i] = strArrServers[i + 2];
+            }
+        }
+
+
         HorizontalStackLayout hsls = new HorizontalStackLayout(); hsls.HorizontalOptions = LayoutOptions.Center;
-        Button btnUpdate = new Button(); btnUpdate.Text = "Update List"; btnUpdate.Clicked += (sender, args) => RenderServerPage(); btnUpdate.BackgroundColor = Color.FromArgb("#00CCCC"); btnUpdate.HorizontalOptions = LayoutOptions.Center; btnUpdate.Margin = new Thickness(0, 0, 3, 0);
-        Button btnLogOut = new Button(); btnLogOut.Text = "Log out"; btnLogOut.Clicked += (sender, args) => LogOut(); btnLogOut.BackgroundColor = Color.FromArgb("#00CC66"); btnLogOut.HorizontalOptions = LayoutOptions.Center;
+        Button btnUpdate = new Button(); btnUpdate.Text = "Update List"; btnUpdate.Clicked += (sender, args) => RenderServerPage(); btnUpdate.BackgroundColor = Color.FromArgb("#00CCCC"); btnUpdate.HorizontalOptions = LayoutOptions.Center; btnUpdate.Margin = new Thickness(0, 0, 3, 0); btnUpdate.MinimumWidthRequest = 100; btnUpdate.FontAttributes = FontAttributes.Bold; btnUpdate.FontSize = btnUpdate.FontSize + 2;
+        Button btnLogOut = new Button(); btnLogOut.Text = "Log out"; btnLogOut.Clicked += (sender, args) => LogOut(); btnLogOut.BackgroundColor = Color.FromArgb("#00CC66"); btnLogOut.HorizontalOptions = LayoutOptions.Center; btnLogOut.MinimumWidthRequest = 100; btnLogOut.FontAttributes = FontAttributes.Bold; btnLogOut.FontSize = btnLogOut.FontSize + 2;
         hsls.Children.Add(btnUpdate);
         hsls.Children.Add(btnLogOut);
         verticalStackLayout.Children.Add(hsls);
@@ -219,6 +242,8 @@ public partial class MainPage : ContentPage
         srvLbl.VerticalOptions = LayoutOptions.Start;
         verticalStackLayout.Children.Add(srvLbl);
 
+        Content = scrollView;
+
         for (int i = 0; i < serverArr.Length; i++)
         {
             Button btnServer = new Button();
@@ -226,20 +251,21 @@ public partial class MainPage : ContentPage
             verticalStackLayout.Children.Add(btnServer);
             btnServer.Clicked += (sender, args) => RenderPresetPage(btnServer.Text);
         }
-        Content = scrollView;
     }
-    void RenderPresetPage(string buttonServerText)
+    async void RenderPresetPage(string buttonServerText)
     {
         //1.Count presets
         //2.Create buttons
         //3.Onclick send a play/stop request
 
+        page = 2;
+
         verticalStackLayout.Children.Clear();
 
         HorizontalStackLayout hsl = new HorizontalStackLayout(); hsl.HorizontalOptions = LayoutOptions.Center;
-        Button btnBack = new Button(); btnBack.Text = "Server List"; btnBack.Clicked += (sender, args) => RenderServerPage(); btnBack.BackgroundColor = Color.FromArgb("#FF9933"); btnBack.HorizontalOptions = LayoutOptions.Center; btnBack.Margin = new Thickness(0, 0, 3, 0);
-        Button btnUpdate = new Button(); btnUpdate.Text = "Update List"; btnUpdate.Clicked += (sender, args) => RenderPresetPage(buttonServerText); btnUpdate.BackgroundColor = Color.FromArgb("#00CCCC"); btnUpdate.HorizontalOptions = LayoutOptions.Center; btnUpdate.Margin = new Thickness(0, 0, 3, 0);
-        Button btnLogOut = new Button(); btnLogOut.Text = "Log out"; btnLogOut.Clicked += (sender, args) => LogOut(); btnLogOut.BackgroundColor = Color.FromArgb("#00CC66"); btnLogOut.HorizontalOptions = LayoutOptions.Center;
+        Button btnBack = new Button(); btnBack.Text = "Server List"; btnBack.Clicked += (sender, args) => RenderServerPage(); btnBack.BackgroundColor = Color.FromArgb("#FF9933"); btnBack.HorizontalOptions = LayoutOptions.Center; btnBack.Margin = new Thickness(0, 0, 3, 0); btnBack.MinimumWidthRequest = 100; btnBack.FontAttributes = FontAttributes.Bold; btnBack.FontSize = btnBack.FontSize + 2;
+        Button btnUpdate = new Button(); btnUpdate.Text = "Update";/*btnUpdate.Text = Convert.ToChar(10227).ToString();*/ btnUpdate.Clicked += (sender, args) => RenderPresetPage(buttonServerText); btnUpdate.BackgroundColor = Color.FromArgb("#00CCCC"); btnUpdate.HorizontalOptions = LayoutOptions.Center; btnUpdate.Margin = new Thickness(0, 0, 3, 0); btnUpdate.MinimumWidthRequest = 100; btnUpdate.FontAttributes = FontAttributes.Bold; btnUpdate.FontSize = btnUpdate.FontSize + 2;
+        Button btnLogOut = new Button(); btnLogOut.Text = "Log out"; btnLogOut.Clicked += (sender, args) => LogOut(); btnLogOut.BackgroundColor = Color.FromArgb("#00CC66"); btnLogOut.HorizontalOptions = LayoutOptions.Center; btnLogOut.MinimumWidthRequest = 100; btnLogOut.FontAttributes = FontAttributes.Bold; btnLogOut.FontSize = btnLogOut.FontSize + 2;
         hsl.Children.Add(btnBack);
         hsl.Children.Add(btnUpdate);
         hsl.Children.Add(btnLogOut);
@@ -254,21 +280,20 @@ public partial class MainPage : ContentPage
         verticalStackLayout.Children.Add(pstLbl);
 
         stream.Flush();
-        TcpReadWrite.WriteToStream(stream, "preset_list|" + buttonServerText);
-        Thread.Sleep(100);
-        incomingMsg = TcpReadWrite.ReadFromStream(stream);
+        await Task.Run(() => TcpReadWrite.WriteToStream(stream, "preset_list|" + buttonServerText));
+        incomingMsg = await Task.Run(() => TcpReadWrite.ReadFromStream(stream));
         Debug.WriteLine(incomingMsg);
 
-        strArr = incomingMsg.Split('|'); //Splits preset_list response
-        if (strArr[1].Contains("succes") | strArr[1].Contains("sucess") | strArr[1].Contains("success"))
+        strArrPresets = incomingMsg.Split('|'); //Splits preset_list response
+        if (strArrPresets.Contains("success"))
         {
             stream.Flush();
 
-            presetArr = new string[strArr.Length - 3];
+            presetArr = new string[strArrPresets.Length - 3];
 
-            for (int i = 0; i < strArr.Length - 3; i++) //{preset_list|success|preset1|preset2} -> {preset1|preset2}
+            for (int i = 0; i < strArrPresets.Length - 3; i++) //{preset_list|success|preset1|preset2} -> {preset1|preset2}
             {
-                presetArr[i] = strArr[i + 3];
+                presetArr[i] = strArrPresets[i + 3];
             }
         }
 
@@ -276,10 +301,11 @@ public partial class MainPage : ContentPage
         for (int i = 0; i < presetArr.Length; i++)
         {
             HorizontalStackLayout horizontalStackLayout = new HorizontalStackLayout(); // [preset name] [stop]
+            horizontalStackLayout.HorizontalOptions = LayoutOptions.Center;
 
             Button btnStop = new Button(); btnStop.Text = "Stop"; btnStop.BackgroundColor = Color.FromArgb("#F24E4E"); btnStop.HorizontalOptions = LayoutOptions.Start;
             horizontalStackLayout.Children.Add(btnStop);
-            Button btnPreset = new Button(); btnPreset.Text = presetArr[i]; btnPreset.Margin = new Thickness(3, 0, 0, 0); btnPreset.WidthRequest = 270;//todo: why wont work - (horizontalStackLayout.Width)-(btnStop.Width)
+            Button btnPreset = new Button(); btnPreset.Text = presetArr[i]; btnPreset.Margin = new Thickness(3, 0, 0, 0); btnPreset.MinimumWidthRequest = 250;
             horizontalStackLayout.Children.Add(btnPreset);
 
 
@@ -291,24 +317,25 @@ public partial class MainPage : ContentPage
     }
 
 
-    void Play(string buttonServerText, string ButtonPresetText)
+    async void Play(string buttonServerText, string ButtonPresetText)
     {
         stream.Flush();
-        TcpReadWrite.WriteToStream(stream, "play|" + buttonServerText + "|" + ButtonPresetText);
+        await Task.Run(() => TcpReadWrite.WriteToStream(stream, "play|" + buttonServerText + "|" + ButtonPresetText));
     }
-    void Stop(string buttonServerText)
+    async void Stop(string buttonServerText)
     {
         stream.Flush();
-        TcpReadWrite.WriteToStream(stream, "stop|" + buttonServerText);
+        await Task.Run(() => TcpReadWrite.WriteToStream(stream, "stop|" + buttonServerText));
     }
-    void LogOut()
+    async void LogOut()
     {
         stream.Flush();
         TcpReadWrite.WriteToStream(stream, "logout");
         RenderMainPage();
     }
 
-    private void Login(object sender, EventArgs e)     //"address|port|username|password|saveDetails|savePassword";
+
+    private async void Login(object sender, EventArgs e)     //"address|port|username|password|saveDetails|savePassword";
     {
 
         if (entryAddress.Text != null && entryAddress.Text.Length > 0)
@@ -329,26 +356,28 @@ public partial class MainPage : ContentPage
         }
 
 
-        //------------------------------------/DETAIL SAVING\-------------------------------------------------
+        //------------------------------------Save details to file-------------------------------------------------\
 
-        if (cb0.IsChecked == true && cb1.IsChecked == true)//details
+        if (cb0.IsChecked == true && cb1.IsChecked == true)//remember details and password
         {
             DetailFile.WriteToFile(DetailFile.fullPath, $"{entryAddress.Text}|{entryPort.Text}|{entryUsername.Text}|{entryPassword.Text}|true|true");
         }
-        if (cb1.IsChecked == true && cb1.IsChecked == false)//password
+        if (cb0.IsChecked == true && cb1.IsChecked == false)//remember details only
         {
             DetailFile.WriteToFile(DetailFile.fullPath, $"{entryAddress.Text}|{entryPort.Text}|{entryUsername.Text}||true|false");
         }
-        if (cb1.IsChecked == false && cb1.IsChecked == true)//password
+        if (cb0.IsChecked == false && cb1.IsChecked == true)//remember password only
         {
             DetailFile.WriteToFile(DetailFile.fullPath, $"|||{entryPassword.Text}|false|true");
         }
-        if (cb1.IsChecked == false && cb1.IsChecked == false)//password
+        if (cb0.IsChecked == false && cb1.IsChecked == false)//remember nada
         {
             DetailFile.WriteToFile(DetailFile.fullPath, $"||||false|false");
         }
-        //------------------------------------\DETAIL SAVING/-------------------------------------------------
+        //------------------------------------Save details to file-------------------------------------------------/
 
+
+               
 
 
         client = new TcpClient(address, port);
@@ -356,20 +385,22 @@ public partial class MainPage : ContentPage
 
         Debug.WriteLine(TcpReadWrite.ReadFromStream(stream).ToString()); //should return "register"
         stream.Flush();
-        Thread.Sleep(200); //gives a stronger chance for the streams to fill up
-        TcpReadWrite.WriteToStream(stream, $"login|{username}|{password}");
+        Thread.Sleep(250); //gives a stronger chance for the streams to fill up
+        string deviceName = System.Environment.MachineName; //the name of the device that is running this app
+        await Task.Run(() => TcpReadWrite.WriteToStream(stream, $"login|{username}|{password}|{deviceName}"));
         stream.Flush();
-        Thread.Sleep(400);
-        incomingMsg = (TcpReadWrite.ReadFromStream(stream).ToString()); //should return "login|succes"
+        //Thread.Sleep(2000);
+        incomingMsg = (TcpReadWrite.ReadFromStream(stream).ToString()); //should return "login|success OR login|succes"
 
-        strArr = incomingMsg.Split('|'); //splits login response
-        if (strArr[1].Contains("succes") | strArr[1].Contains("sucess") | strArr[1].Contains("success"))
+        if (incomingMsg.Contains("success"))
         {
             stream.Flush();
 
+            strArrServers = incomingMsg.Split('|'); //splits login response
+
             RenderServerPage();
         }
-        else if ((strArr[1].Contains("use")))
+        else if ((incomingMsg.Contains("use")))
         {
             stream.Flush();
             DisplayAlert("Alert", "Id in use", "OK");
@@ -389,20 +420,38 @@ public partial class MainPage : ContentPage
             }
             catch { }
         }
-
-
-
-
-
-
-
-
-
-        // Routing.RegisterRoute(nameof(ServerPage), typeof(ServerPage));
-        // Shell.Current.GoToAsync(nameof(ServerPage));
     }
-
-
-
 }
 
+//todo
+
+//1. stream reader() -> Queue[a,b,c,d,e] -> <- Queue Reader() -> command processor() -> status?  -> status handler()
+//                                                                                   -> servers? -> server handler()
+//                                                                                   -> presets? -> preset handler()
+//
+//
+//
+//2. pingwise connectivity checker, (for some reason soesnt work)
+//3. encapsulate
+
+
+
+
+
+// the following is a way to assign a time limit to an awaited task, in order to avoid irresponding command
+/*
+var readTask = Task.Run(() => TcpReadWrite.ReadFromStream(stream));
+var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5)); // Set timeout to 5 seconds
+
+var completedTask = await Task.WhenAny(readTask, timeoutTask);
+
+if (completedTask == timeoutTask)
+{
+    // Handle timeout
+}
+else
+{
+    incomingMsg = await readTask;
+    // Handle incoming message
+}
+*/
